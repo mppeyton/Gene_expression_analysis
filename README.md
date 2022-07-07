@@ -1,6 +1,6 @@
 # Gene_expression_analysis
 
-Analysis of gene expression data using R (CSCI5465):
+R scripts for the analysis of gene expression data (CSCI5465):
 
 Gene expression data_analysis: Statistical analysis of gene expression data using microarray and RNA-seq datasets
 
