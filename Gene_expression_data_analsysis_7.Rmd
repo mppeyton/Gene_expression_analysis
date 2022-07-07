@@ -1,0 +1,385 @@
+---
+title: "Statistical Analysis of Gene Expression Data"
+author: "Mina Peyton"
+date: "11/11/2020"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+## Part I: Understanding the breast cancer study
+
+a) What was the purpose of each study and what experiments did the authors do to answer the question they were interested in?
+
+Study 1 (microarray): DNA methylation profiling reveals a predominant immune component in breast cancers
+
+The purpose of study 1 was to examine the epigenetic changes in breast cancer. Specifically, how the DNA meythylation landscape across phenotypically diverse breast tumors are altered in order to define meaningful biological and/or clinical data. The authors used the Infinium® HumanMethylation27 bead‐array‐based platform to perform their experiment.
+
+Study 2 (RNAseq): Integrated Analysis of Gene Expression, CpG Island Methylation, and Gene Copy Number in Breast Cancer Cells by Deep Sequencing
+
+The purpose of study 2 was to identify differentially expressed genes in ER+ and ER- breast cancer cell lines that may be important in the regulation and function of breast cancer. The authors used next generation cDNA sequencing technology (RNA-seq) to quantify RNA abundance and differentially expressed genes. As well as DNA-seq.
+
+b) How many gene expression samples are in each dataset?
+In study 1, a total of 248 samples was examined. The 248 samples were examined in sets. The main set comprised of 123 samples consisting of 119 carcinomas and 4 normal; whereas, the validation set was comprised of 125 samples consisting of 117 carcinomas and 8 normal.
+
+In study 2, initially, there were 8 cell line samples, 7 cancer lines and 1 non-tumorigenic cell line, but the non-tumorigenic cell line MCF10A was excluded in their analysis. 18517 gene were identified; however, 710 genes that had 0 mapped reads in all the samples were excluded, leaving 17807 genes. 
+
+c) For each study, what were the two groups of samples being contrasted to measure differential gene expression?
+
+For study 1, the two groups of samples being contrasted to measure differential gene expression were cancerous and normal breast tissue.
+
+For study 2, the two groups of samples being contrasted to measure differential gene expression were ER+ (4 cell lines) and ER - (3 cell lines).
+
+## Part II: Loading and manipulating expression data in R
+
+```{r}
+
+################# MicroArray dataset
+
+BCMA <- read.table("BC_MicroArray.txt",header=T,row.names=1,sep="\t",quote="")
+BCMA_stat <- read.table("BC_MicroArray_Status.txt",header=T,sep="\t",quote="")
+
+rownames(BCMA_stat) <- BCMA_stat$BCID
+
+#str(BCMA)
+BCMA <- as.matrix(BCMA)
+#str(BCMA)
+dim(BCMA)
+
+```
+
+c) Print the data for the BRCA1 gene for all samples.
+
+```{r}
+dim(BCMA)
+gene_names <- row.names(BCMA)
+gene_index <-c(1:32864)
+
+gene_index[gene_names == "BRCA1"]
+#10810
+
+BRCA1 <- BCMA[10810,]
+
+print(BRCA1)
+
+```
+
+d) Print the values for the first 10 genes for the first ER+ sample (GSM519791) in the microarray dataset.
+
+```{r}
+sample_names <- colnames(BCMA)
+sample_index <-c(1:90)
+
+sample_index[sample_names == "GSM519791"]
+#69
+GSM519791 <- BCMA[,69]
+
+print(head(GSM519791, n = 10))
+
+```
+
+e) Compute the mean and standard deviation of the expression data for the BRCA1 gene across all samples.
+
+```{r}
+
+BRCA1mean <- mean(BRCA1)
+BRCA1sd <- sd(BRCA1)
+
+```
+
+f) Compute the mean and standard deviation of the expression of all genes in the first ER+ sample (GSM519791).
+
+```{r}
+GSM519791mean <- mean(GSM519791)
+GSM519791sd <- sd(GSM519791)
+```
+
+g) Print the list of 10 genes with the highest expression values in order of decreasing expression based on the first ER+ sample (GSM519791).
+
+```{r}
+GSM519791sort <- sort(GSM519791, decreasing = TRUE)
+
+print(head(GSM519791sort, n = 10))
+
+```
+
+h) Create a vector called ERpos_samples that contains the GSM names of all ER+ samples.
+```{r}
+ERstatpos <- c(1:90)
+ERstatpos <- ERstatpos[BCMA_stat$ERStat == 1]
+
+ERpos_samples <- BCMA_stat$GSM[ERstatpos]
+
+```
+
+i) Create a vector called ERneg_samples that contains the names of all ER- samples.
+
+```{r}
+ERstatneg <- c(1:90)
+ERstatneg <- ERstatneg[BCMA_stat$ERStat == 0]
+
+ERneg_samples <- BCMA_stat$GSM[ERstatneg]
+```
+
+j) Use the vectors created in Parts (h) and (i) to compute a new vector expr_difference, which contains the difference in the mean expression for each gene between the ER+ and ER- sample groups. Positive values in this vector should indicate where mean ER+ expression is greater than mean ER- expression, and negative values should indicate where ER- < ER+ expression (Hint: matrices can be indexed by name and there are functions that compute means on matrix rows and columns).
+
+```{r}
+dim(BCMA)
+ERpos <- BCMA[,ERpos_samples]
+dim(ERpos)
+
+ERneg_samples <- ERneg_samples[1:45]
+ERneg <- BCMA[,ERneg_samples]
+dim(ERneg)
+
+
+ERpos_means <- rowMeans(ERpos)
+ERneg_means <- rowMeans(ERneg)
+
+expr_difference <- ERpos_means - ERneg_means
+
+```
+
+k) Using the expr_difference vector you just created, print the gene that has the largest positive difference (i.e. ER+ > ER-) and the largest negative difference (i.e. ER+ < ER-) in mean expression between the ER+ and ER- groups. 
+```{r}
+
+expr_difference <- sort(expr_difference, decreasing = TRUE)
+
+head(expr_difference, n = 5)
+pos_difference <- which.max(expr_difference)
+pos_difference
+
+tail(expr_difference, n = 5)
+neg_difference <- which.min(expr_difference)
+neg_difference
+```
+
+## Part III: Statistical analysis of microarray gene expresison data
+
+a) Create a vector of t-statistics measuring the difference in expression for each gene between the ER+ and ER- samples (this vector should be 32864 x 1 or 1 x 32864). 
+```{r}
+
+library(matrixStats)
+
+tstat <- function(matrix_a,matrix_b){ 
+  mean1 <- rowMeans(matrix_a)
+  mean2 <- rowMeans(matrix_b)
+  mean_diff <- mean1 - mean2
+  var1 <- rowVars(matrix_a)
+  var2 <- rowVars(matrix_b)
+  n1 <- dim(ERpos)[2]
+  n2 <- dim(ERneg)[2]
+  sample1 <- var1/n1
+  sample2 <- var2/n2
+  results <- (mean_diff)/(sqrt(sample1 + sample2))
+  return(results)}
+
+BCMA_tstat <- tstat(ERpos, ERneg)
+head(BCMA_tstat, n=5)
+
+# mean1 <- apply(ERpos, 1, mean)
+# head(mean1, n = 5)
+# head(ERpos_means, n = 5)
+# mean2 <- apply(ERneg, 1, mean)
+
+# var1 <- apply(ERpos, 1, var)
+# var2 <- apply(ERpos, 1, var)
+
+# n1 <- dim(ERpos)[2]
+# n2 <- dim(ERneg)[2]
+```
+
+b) Use the hist() function to plot a histogram of the t-statistics you just computed. 
+
+```{r}
+hist(BCMA_tstat, breaks = 100)
+```
+
+c) Your goal is to answer the yes/no question of whether or not each gene’s expression value is significantly different from the random expectation in each sample. To do this, you will need to compute a p-value that reflects the significance of the t-statistics you just measured. A p-value represents the probability that the observed t-statistic was derived from samples where there was no significant difference in the means of the two groups. Thus, a small p-value reflects a case in which the gene is very likely differentially expressed between the two sets of samples. Typically, a cutoff of 0.05 is used; genes with less than a 0.05 p-value are called significantly differentially expressed.
+
+```{r}
+
+tstat2 <- function(matrix_a,matrix_b){ 
+  mean1 <- rowMeans(matrix_a)
+  mean2 <- rowMeans(matrix_b)
+  mean_diff <- mean1 - mean2
+  var1 <- rowVars(matrix_a)
+  var2 <- rowVars(matrix_b)
+  n1 <- dim(ERpos)[2]
+  n2 <- dim(ERneg)[2]
+  n_tot <- n1 + n2
+  sample1 <- var1/n1
+  sample2 <- var2/n2
+  results <- (mean_diff)/(sqrt(sample1 + sample2))
+  pvals = 2 * pt(-abs(results),n_tot - 2)
+  tstat_list <- c(results, pvals)
+  return(pvals)}
+
+BCMA_pvals <- tstat2(ERpos, ERneg)
+head(BCMA_pvals, n =5)
+
+```
+
+d.) Print a list of significantly differentially expressed genes (p-value < 0.05), sorted in order of their significance (from smallest to largest). Include the gene name, the t-statistic, and the corresponding p-value in your list.
+
+```{r}
+pvals <- c(1:32864)
+pvals_index <- pvals[BCMA_pvals < 0.05]
+pvals_names <- gene_names[pvals_index]
+pvals_tstat <- BCMA_tstat[pvals_index]
+pvals_pval <- BCMA_pvals[pvals_index]
+pvals_pval_index <- sort(pvals_pval, index.return = TRUE)
+
+sig_DE <- cbind(pvals_names[pvals_pval_index$ix], pvals_tstat[pvals_pval_index$ix], pvals_pval[pvals_pval_index$ix])
+
+colnames(sig_DE) <- c("gene", "t-value", "p-value")
+head(sig_DE, n = 10)
+
+sig_DE_df2 <- as.data.frame(sig_DE)
+```
+
+e.) How many genes are significantly differentially expressed at a p-value < 0.05? How many genes are significantly differentially expressed at a Bonferroni-corrected p-value < 0.05?
+
+There are 7936 significantly differentially expressed at a p-value of < 0.05. There are 257 genes that are significantly differetially expressed at a Bonferroni-corrected p-value < 0.05.
+
+```{r}
+
+p_adjust_index <- c(1:7936)
+pvals_adjust <- p.adjust(pvals_pval, method="bonferroni")
+sig_pvals_adjust_index <- p_adjust_index[pvals_adjust < 0.05]
+sig_padjust <-pvals_adjust[sig_pvals_adjust_index]
+
+# correct answer is 137 vs. 257 
+# pvals_adjust <- p.adjust(BCMA_pvals, method="bonferroni")
+# p.adjust on whole BCMA_pvals vector (32864) vs just the DE pvals_pval (7936)
+```
+
+f.) How many genes are significantly differentially expressed and expressed more highly in ER+ tumors relative to ER- tumors?
+
+There are 3930 genes that are significantly differentially expressed and expressed more highly in ER+ tumors relative to ER- tumors.
+
+```{r}
+
+DE_pos <- pvals_index[pvals_tstat > 0]
+
+```
+
+g.) How many genes are significantly differentially expressed and expressed more lowly in ER+ tumors relative to ER- tumors?
+
+There are 4006 genes that are significantly differentially expressed and expressed more lowly in ER+ tumors relative to ER- tumors.
+
+```{r}
+
+DE_neg <- pvals_index[pvals_tstat < 0]
+
+```
+
+h.) Select a gene from the top 10 most significantly differentially expressed and describe what’s known about its function (http://www.genecards.org will be useful).
+
+ESR1, estrogen receptor alpha, is a transcription factor. When ESR1 ligand (estradiol) binds, it dimerizes and translocate into the nucleus where it will bind its estrogen response element (ERE) and activate or inhibit transcription of genes.
+
+```{r}
+
+head(sig_DE, n = 10)
+
+```
+
+## Part IV: Using R Packages to Process RNA-Seq Data
+
+```{r}
+
+# A. install DEseq 
+# -- Warning, this will take ~5 mins to install
+
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+
+#BiocManager::install("DESeq2")
+
+library("DESeq2")
+
+# B. Add Code to read in RNA-Seq data
+
+################### RNAseq dataest
+BCRS <- read.table("BC_RNAseq.txt",header=T,row.names=1,sep="\t",quote="")
+BCRS_stat <- read.table("BC_RNAseq_Status.txt",header=T,sep="\t",quote="")
+
+rownames(BCRS_stat) <- BCRS_stat$BCID
+#str(BCRS)
+BCRS <- as.matrix(BCRS)
+#str(BCRS)
+
+```
+
+c) Convert status table into a factor and create DESeq2 Count Data Set
+
+```{r}
+# C. Convert Status table into a factor
+str(BCRS_stat$ERStat) # int
+BCRS_stat$ERStat <- factor(BCRS_stat$ERStat)
+str(BCRS_stat$ERStat) #factor w/ 2 levels
+
+cds <- DESeqDataSetFromMatrix(countData = BCRS,
+                              colData = BCRS_stat,
+                              design = ~ ERStat)
+```
+
+d) Normalize for size effects and estimate dispersion of the data
+
+```{r}
+# D. Normalize for Size Effects:
+cds <- DESeq(cds)
+```
+
+e) Calculate differential expression
+
+```{r}
+# E. Calculate Differential Expression
+res <- results(cds,contrast = c('ERStat','0','1'))
+
+```
+
+f) Print the most significant 100 genes based on their adjusted p-value (adjusted p-value is equivalent to the False Discovery Rate (FDR)). What is the corresponding FDR for these 100 genes?
+
+The corresponding FDR for these 100 genes is 2.565016e-06.
+
+```{r}
+# F. Extract top 100 genes by their adjusted p-value using FDR
+res <- res[order(res$padj),]
+names(res)
+
+BCRS_genes <- rownames(res)
+BCRS_padjust <- res$padj
+BCRS_padjusted <- sort(BCRS_padjust, index.return = TRUE )
+# head(BCRS_padjusted, n = 5)
+
+top100 <- BCRS_genes[BCRS_padjusted$ix]
+top100 <- top100[1:100]
+head(top100, n = 5)
+
+BCRS_padjusted_100 <- BCRS_padjusted$x[1:100]
+
+top100_list <- cbind(top100, BCRS_padjusted_100)
+head(top100_list, n = 100)
+
+BCRS_padjusted_100[100]
+
+```
+g) How many of the top 500 most significantly differentially expressed genes overlap between the microarray and RNA-Seq analyses? 
+
+Of the top 500 significantly DE genes in the RNA-seq and microarray analyses, only 29 genes overlap. The degree of overlap is 5.8% of the top 500 genes. 
+
+```{r}
+
+BCRS_genes_clean <- sapply(strsplit(BCRS_genes, "\\."), "[", 1)
+
+BCRS_top500 <- BCRS_genes_clean[BCRS_padjusted$ix[1:500]]
+
+BCMA_DE_genes <- sig_DE_df2$gene
+
+BCMA_top500 <- BCMA_DE_genes[1:500]
+
+DE_gene_match <- intersect(BCMA_top500, BCRS_top500)
+DE_gene_match
+```
+

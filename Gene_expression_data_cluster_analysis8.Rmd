@@ -1,0 +1,300 @@
+---
+title: "Exploring Gene Expression Signatures through Cluster Analysis "
+author: "Mina Peyton"
+date: "12/7/2020"
+output:
+  html_document: default
+  word_document: default
+---
+# Part I: Understanding the gene expression study
+(1) What was the purpose of the study and what experiments did the authors do to answer the question they were interested in?
+
+The purpose of the study was to examine and identify genomic expression patterns of yeast under different environmental conditions performing DNA microarray experiments.
+
+(2) What are some examples of different environments or stresses the authors subjected yeast cells to before measuring their gene expression?
+
+Different environments/stresses the authors subjected yeast cells to before measuring their gene expression were "temperature shocks, hydrogen peroxide, the superoxide-generating drug menadione, the sulfhydryl-oxidizing agent diamide, the disulfide-reducing agent dithiothreitol, hyper- and hypo-osmotic shock, amino acid starvation, nitrogen source depletion, and progression into stationary phase."
+
+(3) Describe one of the significant conclusions of the study.
+
+One of the significant findings of the study was the identification of a cluster of genes (~900) whose expression pattern was similiar across all environmental conditions.
+
+# Part II: Clustering gene expression profiles using the k-means algorithm
+
+```{r}
+ load("/Users/mina/Documents/gasch_expression_data.RData")
+
+```
+Before clustering, it is often useful to limit the analysis to a subset of genes that shows high variance across the set of conditions studied. In this case, we will restrict our clustering analysis to the 2000 most variable genes. Compute variance of each gene across the set of 173 conditions. Then, select the 2000 most variable genesfrom the matrix to create a matrix called cluster_data.
+
+```{r}
+gene_names <- rownames(expr_data)
+gene_var <- apply(expr_data,1, var)
+gene_var_sort <- sort(gene_var, index.return = TRUE, decreasing = TRUE )
+high_var <- gene_var_sort$x[1:2000]
+high_genes <- gene_var_sort$ix[1:2000]
+high_gene_names <- gene_names[high_genes]
+cluster_data <- as.matrix(subset(expr_data[high_gene_names,]))
+dim(cluster_data) # 2000 x 173
+
+```
+
+(3) Cluster the cluster_data matrix using the kmeans_cluster() function.
+
+```{r}
+kmeans_cluster <- function(data, k){
+  # We want the gene expression values to be the columns, conditions to be rows
+  data <- t(data)
+
+  # Randomize the initial gene cluster assignments
+  cluster_labels <- sample(1:k, size=ncol(data), replace=TRUE)
+  # initialize the center at 0
+  center <- matrix(rep(0,nrow(data)*k), ncol=k)
+  # initialize the distance vector to 0
+  dis <- rep(0, times=k)
+  cost <- 0
+  for(i in 1:ncol(data)){
+    cost <- cost + sqrt(sum((data[,i]-center[,cluster_labels[i]])^2,na.rm=T))
+  }
+  print(paste('Initial Cost ',cost,sep=''))
+  count <- 0
+  while(TRUE){
+    cost_old <- cost
+    
+    for(i in 1:k){
+
+      if(sum(cluster_labels == i) == 0){
+        center[,i] <- center[,i]
+      }
+      else if(sum(cluster_labels == i) == 1){
+        center[,i] <- data[,cluster_labels == i]
+      }
+      else{
+        center[,i] <- rowMeans(data[,cluster_labels == i])
+      }
+    }
+    # for every gene
+    for(i in 1:ncol(data)){
+      # for every centroid
+      for(j in 1:ncol(center)){
+        dis[j] <- sqrt(sum((data[,i]-center[,j])^2,na.rm=T))
+      }
+      # assign into closest cluster
+      cluster_labels[i] <- which.min(dis)
+    }
+    
+    cost <- 0
+    for(i in 1:ncol(data)){
+      cost <- cost + sqrt(sum((data[,i]-center[,cluster_labels[i]])^2,na.rm=T))
+    }
+    print(paste('Iteration: ',count,' -- cost:',cost,sep=''))
+    if(abs(cost - cost_old) < 0.0001){
+      break
+    }
+    count <- count + 1
+  }
+  return(cluster_labels) # vector of gene names and which cluster # they were assigned to
+}
+kcluster <- kmeans_cluster(cluster_data, 50)
+```
+
+a. How many iterations did it take for k-means to converge?
+
+It took 23 iterations for k-means to converge.
+
+b. Add a series of commands to your script that prints the size of each cluster
+
+```{r}
+cluster_size <- c()
+for (i in 1:50){
+  cluster_size <- c(cluster_size, sum(kcluster == i))
+}
+```
+
+What’s your biggest and smallest cluster size?
+My biggest cluster size has 160 genes.
+My smallest cluster size has 1 gene.
+```{r}
+max_cluster <- cluster_size[which.max(cluster_size)]
+cluster_size[30] # 160
+min_cluster <- which.min(cluster_size)
+cluster_size[27] # 1
+
+```
+
+c. For the first 10 clusters, plot 10 different figures showing the expression of the genes within that cluster. 
+
+```{r}
+cluster_size[1:10]
+```
+
+
+```{r}
+cluster_avgs <- list()
+
+for (i in 1:10){
+  cluster_genes <- high_gene_names[which(kcluster == i)]
+  cluster_matrix <- as.matrix(subset(expr_data[cluster_genes,]))
+  cluster_avg <- apply(cluster_matrix,2, mean)
+  matplot(cluster_avg, type = "l", xlab = "Conditions", ylab = "Average Expression Level")
+  cluster_x <- list(cluster_avg)
+  cluster_avgs <- append(cluster_avgs, list(cluster_x))
+  }
+
+```
+
+i. Create a matrix containing only the data for the genes in cluster 1
+
+```{r}
+cluster1_genes <- high_gene_names[which(kcluster == 1)]
+cluster_1 <- as.matrix(subset(expr_data[cluster1_genes,]))
+str(cluster_1)
+
+```
+
+ii. Compute a vector that is the “average” profile for cluster 1. This represents the average gene expression data across all 173 conditions for the genes in cluster 1.
+
+```{r}
+cluster1_avg <- apply(cluster_1, 2, mean)
+
+```
+
+iii. Plot all individual gene expression profiles on the same plot. 
+
+```{r}
+matplot(cluster1_avg, type = "l", xlab = "Conditions", ylab = "Average Expression Level")
+
+cluster_avgs_matrix <- matrix(unlist(cluster_avgs), ncol = 10, byrow = TRUE)
+matplot(cluster_avgs_matrix, type = "l", xlab = "Conditions", ylab = "Average Expression Level")
+
+```
+
+iv. Using the `lines()` function, plot the mean profile as a thick black line on top of the profiles you plotted in part iii. 
+
+```{r}
+
+cluster_matrix_mean <- rowMeans(cluster_avgs_matrix)
+matplot(cluster_avgs_matrix, type = "l", xlab = "Conditions", ylab = "Average Expression Level")
+lines(cluster_matrix_mean, type = "l", lwd =2)
+
+```
+
+d. Pick one of your clusters with an interesting profile (e.g. clear mean expression profile signal in a subset of the conditions). Identify a subset of stress conditions that is either highly over or under-expressed for your chosen cluster.
+
+Cluster 10 (33 genes)
+Under the X1.mM.Menadione..50.min.redo, X1.5.mM.diamide..50.min., and Msn2.overexpression..repeat. conditions, the genes in cluster 10 are highly overexpressed. 
+
+```{r}
+exp_conditions <- colnames(expr_data)
+exp_conditions[50]
+exp_conditions[75]
+exp_conditions[145]
+```
+
+e. For the cluster you chose, print out the genes that are members of that cluster along with their description and function (from the gene_info data.frame). Are there any clear patterns in terms of what functions are represented? 
+
+Yes, there are patterns in terms of what functions are represented such as, metabolism (phase 1 and phase 2 of xenobiotics) and stress.
+
+```{r}
+cluster_10 <- high_gene_names[which(kcluster == 10)]
+print(cluster_10)
+cluster_10_info <- subset(gene_info[cluster_10,])
+print(cluster_10_info)
+
+```
+
+# Part IV: Interpreting your clusters using the Gene Ontology and public tools
+
+TopGO analysis
+
+```{r}
+# Install biocManager
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+
+#Get topGO and yeast annotations
+#BiocManager::install("topGO")
+#BiocManager::install("org.Sc.sgd.db")
+#BiocManager::install("AnnotationDbi")
+
+#install.packages("vctrs")
+
+library(topGO)
+library(org.Sc.sgd.db)
+library(AnnotationDbi)
+
+
+# Get all ids that map to a GO term
+all_ids = mappedkeys(org.Sc.sgdGO)
+
+# Set the "gene_universe" as only those ORF IDs that were
+# present in the high-variance version of the expression data.
+
+#ORFs = all_ids
+high_gene_names <- all_ids
+gene_universe = all_ids[all_ids %in% high_gene_names]
+
+# Using your cluster of interest, set the vector "interesting_genes"
+# to contain the names of the genes in that cluster.
+ 
+# Randomly select 250 genes to test for enrichment
+set.seed(789)
+interesting_genes = sample(cluster_10, 250, replace = TRUE)
+
+### Format input data appropriately for topGO
+# First, combine our gene universe and list of interesting genes into one vector...
+# It is a named factor: the names correspond to all genes in the gene universe,
+# and the value for each gene is either '0' (not interesting) or '1' (interesting)
+
+gene_list = factor(as.integer(gene_universe %in% interesting_genes))
+names(gene_list) = gene_universe
+
+# build our annotations into a list that it can use
+
+orf_2_go_list = as.list(org.Sc.sgdGO[intersect(gene_universe,mappedkeys(org.Sc.sgdGO))])
+orf_2_go_final = lapply(orf_2_go_list, function(x) {
+                      unique(unlist(lapply(x, `[[`, 'GOID')))
+})
+
+# Build the topGOdata object
+GO_bp = new('topGOdata',
+                    ontology = 'BP',    # Use either BP, CC, or MF
+                    allGenes = gene_list,
+                    annotationFun = annFUN.gene2GO,
+                    gene2GO = orf_2_go_final
+                    )
+
+# Perform the test and get results
+result_fisher = runTest(GO_bp, algorithm = 'classic', statistic = 'fisher')
+
+# See general Fisher test results
+result_fisher
+
+# Generate a table containing the most enriched GO terms
+results = GenTable(GO_bp, fisher_p = result_fisher, orderBy = 'fisher_p', topNodes = 10)
+
+# View results!
+results
+
+# For this visualization
+BiocManager::install("Rgraphviz")
+library(Rgraphviz)
+
+showSigOfNodes(GO_bp, score(result_fisher))
+```
+
+Investigate the annotations for these GO terms and summarize some of the striking function enrichments you see. Do these functions make sense given the conditions the genes responded to based on your part III results above? Copy and paste the results (or take a screenshot) returned by topGO and include them in your lab report.
+
+       GO.ID                                 Term
+1  GO:0055114          oxidation-reduction process
+2  GO:0000302  response to reactive oxygen species
+3  GO:0006081  cellular aldehyde metabolic process
+4  GO:0098869      cellular oxidant detoxification
+5  GO:1990748              cellular detoxification
+6  GO:0009636          response to toxic substance
+7  GO:0098754                       detoxification
+8  GO:0006979         response to oxidative stress
+9  GO:0097237 cellular response to toxic substance
+10 GO:0042221                 response to chemical
+
+The GO terms that were significant were cellular stress response to internal or external stimuli. These functions do make sense given the conditions that these overexpressed genes were in were chemical treatment or glucose depletion causing stress to the yeast cells.
